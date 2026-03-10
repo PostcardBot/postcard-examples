@@ -1,0 +1,14 @@
+{
+  "name": "postcardbot-examples",
+  "private": true,
+  "description": "Postcard.bot API examples for Node.js",
+  "scripts": {
+    "send": "node send-postcard.js",
+    "bulk": "node bulk-send.js",
+    "status": "node check-status.js",
+    "webhooks": "node webhooks-server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}
