@@ -13,7 +13,7 @@ import sys
 import requests
 
 API_KEY = os.environ.get("POSTCARDBOT_API_KEY")
-BASE_URL = os.environ.get("POSTCARDBOT_API_URL", "https://postcard.bot")
+BASE_URL = os.environ.get("POSTCARDBOT_API_URL", "https://postcard.bot").rstrip("/")
 
 if not API_KEY:
     print("Set POSTCARDBOT_API_KEY environment variable")
@@ -27,7 +27,7 @@ csv_file = sys.argv[1]
 
 # Parse CSV
 recipients = []
-with open(csv_file, newline="", encoding="utf-8") as f:
+with open(csv_file, newline="", encoding="utf-8-sig") as f:
     reader = csv.DictReader(f)
     for row in reader:
         recipients.append({
@@ -37,8 +37,11 @@ with open(csv_file, newline="", encoding="utf-8") as f:
             "city": row.get("city", ""),
             "state": row.get("state", ""),
             "zip": row.get("zip") or row.get("postal_code", ""),
-            "country": row.get("country", "US"),
+            "country": row.get("country") or "US",
         })
+
+if not 1 <= len(recipients) <= 5000:
+    sys.exit("CSV must contain 1–5,000 recipients")
 
 print(f"Loaded {len(recipients)} recipients from {csv_file}")
 
@@ -50,6 +53,7 @@ if len(recipients) > 3:
 
 response = requests.post(
     f"{BASE_URL}/api/v1/postcards/bulk",
+    timeout=30,
     headers={
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",
@@ -62,6 +66,7 @@ response = requests.post(
             "city": "New York",
             "state": "NY",
             "zip": "10001",
+            "country": "US",
         },
         # {{name}} is replaced with each recipient's first name
         "message": "Hi {{name}}, thank you for being a valued customer!",
@@ -82,5 +87,5 @@ print(f"  Bulk ID: {data['bulk_id']}")
 print(f"  Total recipients: {data['total']}")
 print(f"  Reserved cost: ${data['total_cost']:.2f}")
 print(f"  Status: {data['status']}")
-print(f"\nCards will be processed in background batches (~25/minute).")
+print(f"\nCards are processed asynchronously. Review holds can delay printing.")
 print(f"Check progress: python check_status.py {data['bulk_id']}")
