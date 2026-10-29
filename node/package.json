@@ -6,9 +6,16 @@
     "send": "node send-postcard.js",
     "bulk": "node bulk-send.js",
     "status": "node check-status.js",
-    "webhooks": "node webhooks-server.js"
+    "webhooks": "node webhooks-server.js",
+    "preview": "node preview-postcard.js",
+    "balance": "node check-balance.js",
+    "test": "node --test ../tests/node.test.cjs"
   },
   "dependencies": {
-    "express": "^4.21.0"
+    "express": "^4.21.0",
+    "csv-parse": "^7.0.3"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

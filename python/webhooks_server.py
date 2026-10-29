@@ -18,6 +18,7 @@ import json
 import os
 import sys
 import time
+import re
 from base64 import b64encode
 
 from flask import Flask, request, jsonify
@@ -25,7 +26,7 @@ from flask import Flask, request, jsonify
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET")
 PORT = int(os.environ.get("PORT", 3001))
 
-if not WEBHOOK_SECRET:
+if not WEBHOOK_SECRET and __name__ == "__main__":
     print("Set WEBHOOK_SECRET environment variable")
     print("You get this when creating a webhook via the API")
     sys.exit(1)
@@ -33,33 +34,37 @@ if not WEBHOOK_SECRET:
 app = Flask(__name__)
 
 
-def verify_signature(raw_body: bytes, signature_header: str) -> bool:
-    if not signature_header:
+def verify_signature(raw_body: bytes, signature_header: str, secret=None, now=None) -> bool:
+    secret = secret or WEBHOOK_SECRET
+    if not signature_header or not secret:
         return False
 
     # Parse "t=timestamp,v1=base64signature"
     parts = {}
     for part in signature_header.split(","):
-        key, _, value = part.partition("=")
-        parts[key] = value
+        key, separator, value = part.partition("=")
+        key = key.strip()
+        if not separator or not key or key in parts:
+            return False
+        parts[key] = value.strip()
 
     timestamp = parts.get("t")
     signature = parts.get("v1")
 
-    if not timestamp or not signature:
+    if not re.fullmatch(r"[0-9]{1,12}", timestamp or "") or not re.fullmatch(r"[A-Za-z0-9+/]{43}=", signature or ""):
         return False
 
     # Reject timestamps older than 5 minutes
-    age = abs(time.time() * 1000 - int(timestamp))
-    if age > 5 * 60 * 1000:
-        print(f"Webhook timestamp too old: {age:.0f}ms")
+    # The signature header uses Unix seconds, not milliseconds.
+    age = abs((time.time() if now is None else now) - int(timestamp))
+    if age > 300:
         return False
 
     # Verify HMAC-SHA256
-    payload = f"{timestamp}.{raw_body.decode()}"
+    payload = timestamp.encode("ascii") + b"." + raw_body
     expected = b64encode(
         hmac.new(
-            WEBHOOK_SECRET.encode(), payload.encode(), hashlib.sha256
+            secret.encode(), payload, hashlib.sha256
         ).digest()
     ).decode()
 
@@ -75,19 +80,24 @@ def handle_webhook():
         print("Invalid webhook signature")
         return jsonify({"error": "Invalid signature"}), 401
 
-    event = json.loads(raw_body)
+    try:
+        event = json.loads(raw_body)
+    except (ValueError, UnicodeDecodeError):
+        return jsonify({"error": "Invalid JSON"}), 400
+    if not isinstance(event, dict) or not isinstance(event.get("event"), str) or not isinstance(event.get("data"), dict):
+        return jsonify({"error": "Invalid event envelope"}), 400
+    data = event["data"]
 
     print(f"Webhook received: {event['event']}")
-    print(f"  Postcard: {event['postcard_id']}")
-    print(f"  Status: {event['status']}")
-    print(f"  To: {event.get('to', {}).get('name')}, {event.get('to', {}).get('city')}")
+    print(f"  Postcard/bulk job: {data.get('postcard_id', data.get('bulk_id', 'N/A'))}")
+    print(f"  Status: {data.get('status', 'See event type')}")
 
     # Handle different event types
     handlers = {
-        "postcard.created": lambda: print("  -> Postcard created, will be printed soon"),
-        "postcard.sent": lambda: print("  -> Postcard printed and mailed!"),
+        "postcard.created": lambda: print("  -> Created; this does not confirm printing or delivery"),
+        "postcard.sent": lambda: print("  -> Bulk processing summary" if data.get("is_bulk") else "  -> Accepted for printing; not proof of delivery"),
         "postcard.delivered": lambda: print("  -> Postcard delivered!"),
-        "postcard.failed": lambda: print(f"  -> Postcard failed: {event.get('error')}"),
+        "postcard.failed": lambda: print(f"  -> Postcard failed: {data.get('error')}"),
         "postcard.returned": lambda: print("  -> Postcard returned to sender"),
     }
 

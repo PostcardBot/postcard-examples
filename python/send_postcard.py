@@ -8,7 +8,7 @@ import sys
 import requests
 
 API_KEY = os.environ.get("POSTCARDBOT_API_KEY")
-BASE_URL = os.environ.get("POSTCARDBOT_API_URL", "https://postcard.bot")
+BASE_URL = os.environ.get("POSTCARDBOT_API_URL", "https://postcard.bot").rstrip("/")
 
 if not API_KEY:
     print("Set POSTCARDBOT_API_KEY environment variable")
@@ -17,6 +17,7 @@ if not API_KEY:
 
 response = requests.post(
     f"{BASE_URL}/api/v1/postcards",
+    timeout=30,
     headers={
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",
@@ -36,6 +37,7 @@ response = requests.post(
             "city": "New York",
             "state": "NY",
             "zip": "10001",
+            "country": "US",
         },
         "message": "Wish you were here! Having an amazing time.",
         "image_url": "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?w=1875",
@@ -52,9 +54,12 @@ if not response.ok:
         print(f"Add balance: {data['top_up_url']}")
     sys.exit(1)
 
-print("Postcard sent!")
+print(f"Postcard accepted: {data['status']}")
+if data["status"] == "pending_review":
+    print(data.get("message", "Paid and awaiting review; not yet submitted for printing."))
+else:
+    print("Accepted for printing; delivery is a separate status.")
 print(f"  ID: {data['id']}")
-print(f"  Service: {data['service']}")
 print(f"  Price: ${data['price']:.2f}")
 print(f"  Balance remaining: ${data['balance_remaining']:.2f}")
 print(f"  Expected delivery: {data.get('expected_delivery_date', 'TBD')}")

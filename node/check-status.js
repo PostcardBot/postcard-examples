@@ -2,7 +2,7 @@
 // Usage: POSTCARDBOT_API_KEY=pk_live_your_key node check-status.js <postcard_id or bulk_id>
 
 const API_KEY = process.env.POSTCARDBOT_API_KEY;
-const BASE_URL = process.env.POSTCARDBOT_API_URL || "https://postcard.bot";
+const BASE_URL = (process.env.POSTCARDBOT_API_URL || "https://postcard.bot").replace(/\/+$/, "");
 
 if (!API_KEY) {
   console.error("Set POSTCARDBOT_API_KEY environment variable");
@@ -24,6 +24,7 @@ async function checkStatus() {
 
   const response = await fetch(endpoint, {
     headers: { Authorization: `Bearer ${API_KEY}` },
+    signal: AbortSignal.timeout(30000),
   });
 
   const data = await response.json();
@@ -35,7 +36,7 @@ async function checkStatus() {
 
   if (isBulk) {
     console.log("Bulk Job Status:");
-    console.log(`  ID: ${data.id || id}`);
+    console.log(`  ID: ${data.bulk_id || id}`);
     console.log(`  Status: ${data.status}`);
     console.log(`  Total: ${data.total}`);
     console.log(`  Processed: ${data.processed}`);
@@ -50,10 +51,12 @@ async function checkStatus() {
     console.log(`  ID: ${data.id}`);
     console.log(`  Status: ${data.status}`);
     console.log(`  Delivery: ${data.delivery_status || "pending"}`);
-    console.log(`  Service: ${data.service || "unknown"}`);
     console.log(`  Expected delivery: ${data.expected_delivery_date || "TBD"}`);
     console.log(`  To: ${data.to?.name}, ${data.to?.city}, ${data.to?.country}`);
+    if (data.error) console.log(`  Reason: ${data.error}`);
+    if (data.refund) console.log("  Refund:", JSON.stringify(data.refund));
+    if (data.queued_since) console.log(`  Queued since: ${data.queued_since}`);
   }
 }
 
-checkStatus().catch(console.error);
+checkStatus().catch((error) => { console.error(error.message); process.exitCode = 1; });

@@ -2,7 +2,7 @@
 // Usage: POSTCARDBOT_API_KEY=pk_live_your_key node send-postcard.js
 
 const API_KEY = process.env.POSTCARDBOT_API_KEY;
-const BASE_URL = process.env.POSTCARDBOT_API_URL || "https://postcard.bot";
+const BASE_URL = (process.env.POSTCARDBOT_API_URL || "https://postcard.bot").replace(/\/+$/, "");
 
 if (!API_KEY) {
   console.error("Set POSTCARDBOT_API_KEY environment variable");
@@ -13,6 +13,7 @@ if (!API_KEY) {
 async function sendPostcard() {
   const response = await fetch(`${BASE_URL}/api/v1/postcards`, {
     method: "POST",
+    signal: AbortSignal.timeout(30000),
     headers: {
       Authorization: `Bearer ${API_KEY}`,
       "Content-Type": "application/json",
@@ -32,6 +33,7 @@ async function sendPostcard() {
         city: "New York",
         state: "NY",
         zip: "10001",
+        country: "US",
       },
       message: "Wish you were here! Having an amazing time.",
       image_url: "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?w=1875",
@@ -47,12 +49,13 @@ async function sendPostcard() {
     process.exit(1);
   }
 
-  console.log("Postcard sent!");
+  console.log(`Postcard accepted: ${data.status}`);
+  if (data.status === "pending_review") console.log(data.message || "Paid and awaiting review; not yet submitted for printing.");
+  else console.log("Accepted for printing; delivery is a separate status.");
   console.log(`  ID: ${data.id}`);
-  console.log(`  Service: ${data.service}`);
   console.log(`  Price: $${data.price.toFixed(2)}`);
   console.log(`  Balance remaining: $${data.balance_remaining.toFixed(2)}`);
   console.log(`  Expected delivery: ${data.expected_delivery_date || "TBD"}`);
 }
 
-sendPostcard().catch(console.error);
+sendPostcard().catch((error) => { console.error(error.message); process.exitCode = 1; });

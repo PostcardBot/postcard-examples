@@ -8,10 +8,10 @@
 // The message supports {{name}} which is replaced with each recipient's first name.
 
 const fs = require("fs");
-const path = require("path");
+const { parse } = require("csv-parse/sync");
 
 const API_KEY = process.env.POSTCARDBOT_API_KEY;
-const BASE_URL = process.env.POSTCARDBOT_API_URL || "https://postcard.bot";
+const BASE_URL = (process.env.POSTCARDBOT_API_URL || "https://postcard.bot").replace(/\/+$/, "");
 
 if (!API_KEY) {
   console.error("Set POSTCARDBOT_API_KEY environment variable");
@@ -26,14 +26,11 @@ if (!csvFile) {
 }
 
 function parseCSV(filePath) {
-  const content = fs.readFileSync(filePath, "utf-8");
-  const lines = content.trim().split("\n");
-  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
-
-  return lines.slice(1).map((line) => {
-    const values = line.split(",").map((v) => v.trim());
-    const row = {};
-    headers.forEach((h, i) => (row[h] = values[i] || ""));
+  const rows = parse(fs.readFileSync(filePath, "utf-8"), {
+    columns: (headers) => headers.map((h) => h.trim().toLowerCase()),
+    bom: true, trim: true, skip_empty_lines: true,
+  });
+  return rows.map((row) => {
     return {
       name: row.name || "",
       address_line1: row.address_line1 || row.address || "",
@@ -50,8 +47,8 @@ async function bulkSend() {
   const recipients = parseCSV(csvFile);
   console.log(`Loaded ${recipients.length} recipients from ${csvFile}`);
 
-  if (recipients.length === 0) {
-    console.error("No recipients found in CSV");
+  if (recipients.length === 0 || recipients.length > 5000) {
+    console.error("CSV must contain 1–5,000 recipients");
     process.exit(1);
   }
 
@@ -64,6 +61,7 @@ async function bulkSend() {
 
   const response = await fetch(`${BASE_URL}/api/v1/postcards/bulk`, {
     method: "POST",
+    signal: AbortSignal.timeout(30000),
     headers: {
       Authorization: `Bearer ${API_KEY}`,
       "Content-Type": "application/json",
@@ -76,6 +74,7 @@ async function bulkSend() {
         city: "New York",
         state: "NY",
         zip: "10001",
+        country: "US",
       },
       // {{name}} is replaced with each recipient's first name
       message: "Hi {{name}}, thank you for being a valued customer! We appreciate your business.",
@@ -96,8 +95,8 @@ async function bulkSend() {
   console.log(`  Total recipients: ${data.total}`);
   console.log(`  Reserved cost: $${data.total_cost.toFixed(2)}`);
   console.log(`  Status: ${data.status}`);
-  console.log(`\nCards will be processed in background batches (~25/minute).`);
+  console.log(`\nCards are processed asynchronously. Review holds can delay printing.`);
   console.log(`Check progress: node check-status.js ${data.bulk_id}`);
 }
 
-bulkSend().catch(console.error);
+bulkSend().catch((error) => { console.error(error.message); process.exitCode = 1; });
